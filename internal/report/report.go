@@ -76,7 +76,11 @@ func SVG(rs []sim.Result) string {
 	width := len(rs)*420 + 80
 	var b strings.Builder
 	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" role="img"><title>ARQ protocol comparison</title><rect width="100%%" height="100%%" fill="#f8fafc"/><style>text{font-family:Arial,sans-serif;fill:#183047} .small{font-size:11px} .label{font-size:12px}</style><defs><marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6" fill="context-stroke"/></marker></defs>`, width, height, width, height)
-	fmt.Fprint(&b, `<text x="24" y="30" font-size="22" font-weight="bold">Reliable delivery over an unreliable channel</text><text x="24" y="53" class="label">Blue: data · purple: retransmission · green dashed: ACK · red ×: lost · orange: timeout · cyan: buffered</text><text x="24" y="73" class="small">Time runs downward. Panels share one time scale. Hover arrows and markers for exact event details.</text>`)
+	if len(rs) == 1 {
+		fmt.Fprint(&b, `<text x="24" y="30" font-size="22" font-weight="bold">Reliable delivery: protocol timeline</text><text x="24" y="53" class="small">Blue: data · purple: retransmission · green dashed: ACK</text><text x="24" y="73" class="small">Red ×: lost · orange: timeout · cyan: buffered · hover for details</text>`)
+	} else {
+		fmt.Fprint(&b, `<text x="24" y="30" font-size="22" font-weight="bold">Reliable delivery over an unreliable channel</text><text x="24" y="53" class="label">Blue: data · purple: retransmission · green dashed: ACK · red ×: lost · orange: timeout · cyan: buffered</text><text x="24" y="73" class="small">Time runs downward. Panels share one time scale. Hover arrows and markers for exact event details.</text>`)
+	}
 	y := func(t int64) float64 { return 160 + float64(t)/float64(end)*980 }
 	for tick := 0; tick <= 10; tick++ {
 		t := end * int64(tick) / 10
@@ -119,7 +123,8 @@ func SVG(rs []sim.Result) string {
 					y2 = (yy + y2) / 2
 					color = "#dc2626"
 				}
-				fmt.Fprintf(&b, `<g><title>%s; arrival %.3f ms; lost=%t</title><line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" %s marker-end="url(#arrow)"/><text x="%.1f" y="%.1f" class="small" fill="%s">%s</text>`, title, float64(e.To)/1000, e.Lost, x1, yy, x2, y2, color, dash, x1+(x2-x1)*0.28, yy+(y2-yy)*0.28-3, color, label)
+				fraction := 0.15 + 0.20*float64((e.ID+e.Attempt+2)%4)
+				fmt.Fprintf(&b, `<g><title>%s; arrival %.3f ms; lost=%t</title><line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" %s marker-end="url(#arrow)"/><text x="%.1f" y="%.1f" class="small" fill="%s">%s</text>`, title, float64(e.To)/1000, e.Lost, x1, yy, x2, y2, color, dash, x1+(x2-x1)*fraction, yy+(y2-yy)*fraction-3, color, label)
 				if e.Lost {
 					fmt.Fprintf(&b, `<path d="M%.1f %.1f l8 8 m0 -8 l-8 8" stroke="#dc2626" stroke-width="2"/>`, x2-4, y2-4)
 				}

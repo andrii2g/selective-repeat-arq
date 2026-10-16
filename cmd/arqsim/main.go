@@ -47,8 +47,12 @@ func run(args []string) error {
 		defer file.Close()
 		d := json.NewDecoder(file)
 		d.DisallowUnknownFields()
-		if e = d.Decode(&c); e != nil {
+		config := &c
+		if e = d.Decode(&config); e != nil {
 			return e
+		}
+		if config == nil {
+			return fmt.Errorf("scenario must be a JSON object")
 		}
 		var extra any
 		if e = d.Decode(&extra); e != io.EOF {
@@ -73,6 +77,9 @@ func run(args []string) error {
 	for _, protocol := range protocols {
 		r, e := sim.Run(c, protocol)
 		if e != nil {
+			return e
+		}
+		if e = sim.Verify(c, r); e != nil {
 			return e
 		}
 		results = append(results, r)
@@ -103,6 +110,9 @@ func verify() error {
 				}
 				r, e := sim.Run(c, p)
 				if e != nil {
+					return e
+				}
+				if e = sim.Verify(c, r); e != nil {
 					return e
 				}
 				if !r.Complete {
