@@ -1,0 +1,10 @@
+{
+  "packets": 20,
+  "packet_bytes": 1000,
+  "window": 4,
+  "data_us": 1000,
+  "ack_us": 100,
+  "delay_us": 10000,
+  "timeout_us": 50000,
+  "loss": [{"direction": "data", "packet_id": 5, "attempt": 1}]
+}
