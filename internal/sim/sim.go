@@ -118,7 +118,7 @@ func Run(c Config, protocol string) (Result, error) {
 	if err := c.Validate(); err != nil {
 		return Result{}, err
 	}
-	if protocol != "stop-and-wait" {
+	if protocol != "stop-and-wait" && protocol != "go-back-n" && protocol != "selective-repeat" {
 		return Result{}, fmt.Errorf("unknown protocol %q", protocol)
 	}
 	m := &machine{c: c, r: Result{Protocol: protocol}, base: 1, next: 1, expected: 1}
@@ -201,7 +201,11 @@ func (m *machine) lost(direction string, id, attempt int) bool {
 	return false
 }
 func (m *machine) fill() {
-	for m.next <= m.c.Packets && m.next < m.base+1 {
+	w := m.c.Window
+	if m.r.Protocol == "stop-and-wait" {
+		w = 1
+	}
+	for m.next <= m.c.Packets && m.next < m.base+w {
 		m.schedule(m.next)
 		m.next++
 	}
@@ -235,9 +239,11 @@ func (m *machine) send(id int) {
 	if !lost {
 		m.add(arrival, "data", id, 0)
 	}
-	m.gens[id]++
-	m.add(m.now+m.c.TimeoutUS, "timeout", id, m.gens[id])
+	if m.r.Protocol != "go-back-n" || id == m.base {
+		m.arm(id)
+	}
 }
+func (m *machine) arm(id int) { m.gens[id]++; m.add(m.now+m.c.TimeoutUS, "timeout", id, m.gens[id]) }
 func (m *machine) sendACK(id int) {
 	start := m.now
 	if start < m.ackFree {
@@ -269,6 +275,35 @@ func (m *machine) receive(id int) {
 		m.record("duplicate", id)
 	}
 	m.seen[id] = true
+	if m.r.Protocol == "selective-repeat" {
+		if id < m.expected {
+			m.sendACK(id)
+			return
+		}
+		if id >= m.expected+m.c.Window {
+			m.r.Metrics.Discards++
+			m.record("discard", id)
+			return
+		}
+		if id == m.expected {
+			m.deliver(id)
+			for m.expected <= m.c.Packets && m.buffered[m.expected] {
+				next := m.expected
+				m.buffered[next] = false
+				m.buffer--
+				m.deliver(next)
+			}
+		} else if !m.buffered[id] {
+			m.buffered[id] = true
+			m.buffer++
+			if m.buffer > m.r.Metrics.PeakBuffer {
+				m.r.Metrics.PeakBuffer = m.buffer
+			}
+			m.record("buffer", id)
+		}
+		m.sendACK(id)
+		return
+	}
 	if id == m.expected {
 		m.deliver(id)
 	} else if id > m.expected {
@@ -282,8 +317,15 @@ func (m *machine) ack(id int) {
 	if id < m.base || id >= m.next {
 		return
 	}
-	m.acked[id] = true
-	m.gens[id]++
+	oldBase := m.base
+	first := id
+	if m.r.Protocol == "go-back-n" {
+		first = m.base
+	}
+	for i := first; i <= id; i++ {
+		m.acked[i] = true
+		m.gens[i]++
+	}
 	for m.base < m.next && m.acked[m.base] {
 		m.base++
 	}
@@ -292,13 +334,25 @@ func (m *machine) ack(id int) {
 		m.r.Metrics.CompletionUS = m.now
 		return
 	}
+	if m.r.Protocol == "go-back-n" && m.base != oldBase && m.base < m.next && m.attempts[m.base] > 0 {
+		m.arm(m.base)
+	}
 	m.fill()
 }
 func (m *machine) timeout(id, gen int) {
 	if m.acked[id] || m.gens[id] != gen {
 		return
 	}
+	if m.r.Protocol == "go-back-n" && id != m.base {
+		return
+	}
 	m.r.Metrics.Timeouts++
 	m.record("timeout", id)
-	m.schedule(id)
+	if m.r.Protocol == "go-back-n" {
+		for i := m.base; i < m.next; i++ {
+			m.schedule(i)
+		}
+	} else {
+		m.schedule(id)
+	}
 }
